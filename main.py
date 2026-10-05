@@ -1,72 +1,149 @@
 # ==== הגדרות - שנו כאן כדי לעבוד עם דאטה אחר ====
 
-KAGGLE_DATASET = "harlfoxem/housesalesprediction"   # שם הדאטה-סט ב-Kaggle
-FEATURE_COLUMN = "sqft_living"                       # שם עמודת המאפיין (X) - מה שממנו נחזה
-TARGET_COLUMN = "price"                              # שם עמודת המטרה (y) - מה שרוצים לחזות
+KAGGLE_DATASET = "harlfoxem/housesalesprediction"
+FEATURE_COLUMN = "sqft_living"
+TARGET_COLUMN = "price"
+
 import kagglehub
-
-# Download latest version
-path = kagglehub.dataset_download("yasserh/titanic-dataset")
-
-print("Path to dataset files:", path)
 import pandas as pd
 import os
-
-csv_path = os.path.join(path, "Titanic-Dataset.csv")
-data = pd.read_csv(csv_path)
-data.dropna()
-data.head()
-print(data[['Age', 'Survived']].isnull().sum())
 import numpy as np
+import streamlit as st
 
-# Drop rows where 'Age' or 'Survived' are NaN before converting to numpy
+# =========================
+# הגדרות האתר
+# =========================
+
+st.set_page_config(
+    page_title="Titanic Survival Predictor",
+    page_icon="🚢",
+    layout="centered"
+)
+
+st.title("🚢 Titanic Survival Predictor")
+st.write("הזינו גיל וקבלו הערכה של סיכויי ההישרדות.")
+
+# =========================
+# הורדת הדאטה
+# =========================
+
+@st.cache_data
+def load_data():
+
+    # Download latest version
+    path = kagglehub.dataset_download("yasserh/titanic-dataset")
+
+    csv_path = os.path.join(path, "Titanic-Dataset.csv")
+    data = pd.read_csv(csv_path)
+
+    return data
+
+
+data = load_data()
+
+# =========================
+# ניקוי הנתונים
+# =========================
+
 data_clean = data.dropna(subset=['Age', 'Survived'])
 
 X = data_clean['Age'].to_numpy()
 y = data_clean['Survived'].to_numpy()
 
-print("X shape:", X.shape)
-print("y shape:", y.shape)
-print("X sample:", X[:5])
-print("y sample:", y[:5])
-baseline_prediction = np.mean(y)
-print("baseline prediction (always the same value):", baseline_prediction)
+# =========================
+# Baseline
+# =========================
 
+baseline_prediction = np.mean(y)
 baseline_loss = np.mean(np.abs(y - baseline_prediction))
-print("baseline loss:", baseline_loss)
+
+# =========================
+# Linear Regression
+# =========================
+
 from sklearn.linear_model import LinearRegression
 
-# Prepare the reshaped X from the cleaned X
 X_reshaped = X.reshape(-1, 1)
-print("X shape before reshape:", X.shape)
-print("X shape after reshape:", X_reshaped.shape)
 
 model = LinearRegression()
 model.fit(X_reshaped, y)
 
-print("training done")
 w = model.coef_[0]
 b = model.intercept_
 
-print("w:", w)
-print("b:", b)
-sample_x = X[0]
-print("sample_x:", sample_x)
+# =========================
+# Model Loss
+# =========================
 
-manual_prediction = w * sample_x + b
-print("manual calculation (w * x + b):", manual_prediction)
-
-sklearn_prediction = model.predict(np.array([[sample_x]]))
-print("sklearn predict:", sklearn_prediction[0])
 y_hat = model.predict(X_reshaped)
 
 model_loss = np.mean(np.abs(y - y_hat))
 
-print("baseline loss:", baseline_loss)
-print("model loss:", model_loss)
-user_input = input(" הזינו גיל של אדם: ")
-user_age = float(user_input)
+# =========================
+# אתר - הכנסת גיל
+# =========================
 
-predicted_death = model.predict(np.array([[user_age]]))[0]
+st.subheader("🔢 הזנת גיל")
 
-print("סיכויי הישרדות", predicted_death * 100 , "%")
+user_age = st.number_input(
+    "הזינו גיל של אדם:",
+    min_value=0.0,
+    max_value=100.0,
+    value=25.0,
+    step=1.0
+)
+
+# =========================
+# חיזוי
+# =========================
+
+if st.button("🔮 חשב סיכויי הישרדות"):
+
+    predicted_survival = model.predict(
+        np.array([[user_age]])
+    )[0]
+
+    # הפיכה לאחוזים
+    survival_percentage = predicted_survival * 100
+
+    # כדי שהתוצאה לא תחרוג מ-0% עד 100%
+    survival_percentage = np.clip(
+        survival_percentage,
+        0,
+        100
+    )
+
+    st.subheader("📊 תוצאה")
+
+    st.metric(
+        label="סיכויי הישרדות משוערים",
+        value=f"{survival_percentage:.2f}%"
+    )
+
+    # Progress bar
+    st.progress(
+        int(survival_percentage)
+    )
+
+    if survival_percentage >= 50:
+        st.success("🟢 לפי המודל, ההסתברות המשוערת היא מעל 50%.")
+    else:
+        st.error("🔴 לפי המודל, ההסתברות המשוערת היא מתחת ל-50%.")
+
+
+# =========================
+# מידע על המודל
+# =========================
+
+with st.expander("📈 מידע על המודל"):
+
+    st.write("**משתנה קלט:** Age")
+    st.write("**משתנה מטרה:** Survived")
+
+    st.write(f"**w:** {w:.6f}")
+    st.write(f"**b:** {b:.6f}")
+
+    st.write(f"**Baseline loss:** {baseline_loss:.6f}")
+    st.write(f"**Model loss:** {model_loss:.6f}")
+
+    st.write(f"**מספר דוגמאות:** {len(X)}")
