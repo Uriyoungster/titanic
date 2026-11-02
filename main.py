@@ -1,5 +1,4 @@
 import os
-import random
 
 import kagglehub
 import numpy as np
@@ -15,26 +14,25 @@ FEATURE_COLUMNS = ["Age", "Fare"]
 TARGET_COLUMN = "Survived"
 TOTAL_ROUNDS = 5
 
-# Simple fallback passenger data lets the app still run if Kaggle download fails.
 FALLBACK_PASSENGERS = [
-    {"name": "Ada", "age": 8, "fare": 30, "survived": 1},
-    {"name": "Arthur", "age": 42, "fare": 8, "survived": 0},
-    {"name": "Beatrice", "age": 25, "fare": 80, "survived": 1},
-    {"name": "Charles", "age": 55, "fare": 12, "survived": 0},
-    {"name": "Diana", "age": 19, "fare": 25, "survived": 1},
-    {"name": "Edward", "age": 36, "fare": 7, "survived": 0},
-    {"name": "Florence", "age": 31, "fare": 100, "survived": 1},
-    {"name": "George", "age": 67, "fare": 10, "survived": 0},
-    {"name": "Hazel", "age": 14, "fare": 50, "survived": 1},
-    {"name": "Isaac", "age": 29, "fare": 15, "survived": 0},
-    {"name": "Julia", "age": 40, "fare": 65, "survived": 1},
-    {"name": "Leonard", "age": 23, "fare": 9, "survived": 0},
+    {"Name": "Ada", "Age": 8, "Fare": 30, "Survived": 1},
+    {"Name": "Arthur", "Age": 42, "Fare": 8, "Survived": 0},
+    {"Name": "Beatrice", "Age": 25, "Fare": 80, "Survived": 1},
+    {"Name": "Charles", "Age": 55, "Fare": 12, "Survived": 0},
+    {"Name": "Diana", "Age": 19, "Fare": 25, "Survived": 1},
+    {"Name": "Edward", "Age": 36, "Fare": 7, "Survived": 0},
+    {"Name": "Florence", "Age": 31, "Fare": 100, "Survived": 1},
+    {"Name": "George", "Age": 67, "Fare": 10, "Survived": 0},
+    {"Name": "Hazel", "Age": 14, "Fare": 50, "Survived": 1},
+    {"Name": "Isaac", "Age": 29, "Fare": 15, "Survived": 0},
+    {"Name": "Julia", "Age": 40, "Fare": 65, "Survived": 1},
+    {"Name": "Leonard", "Age": 23, "Fare": 9, "Survived": 0},
 ]
 
 
 @st.cache_data
 def load_titanic_data():
-    """Download Titanic data; use fallback examples if Kaggle is unavailable."""
+    """Download Titanic data; use sample data if Kaggle is unavailable."""
     try:
         path = kagglehub.dataset_download(KAGGLE_DATASET)
         csv_path = os.path.join(path, "Titanic-Dataset.csv")
@@ -45,14 +43,14 @@ def load_titanic_data():
             raise ValueError("The downloaded dataset contains no usable rows.")
 
         return data, "Kaggle Titanic dataset"
-    except Exception:
-        data = pd.DataFrame(FALLBACK_PASSENGERS)
-        return data, "built-in sample data (Kaggle download unavailable)"
+    except Exception as error:
+        st.warning(f"Could not download the Kaggle dataset: {error}")
+        return pd.DataFrame(FALLBACK_PASSENGERS), "built-in sample data"
 
 
 @st.cache_resource
 def train_model(data):
-    """Train a survival-probability model from age and fare."""
+    """Train a model that estimates survival chance from age and fare."""
     X = data[FEATURE_COLUMNS].to_numpy()
     y = data[TARGET_COLUMN].to_numpy()
 
@@ -64,11 +62,11 @@ def train_model(data):
     return model
 
 
-def new_game(passengers):
+def start_new_game(passengers):
     st.session_state.passengers = passengers.sample(
         n=min(TOTAL_ROUNDS, len(passengers))
     ).reset_index(drop=True)
-    st.session_state.round = 0
+    st.session_state.round_number = 0
     st.session_state.score = 0
     st.session_state.finished = False
     st.session_state.feedback = None
@@ -89,12 +87,15 @@ model = train_model(data)
 st.caption(f"Probability model trained with: {data_source}")
 
 if "passengers" not in st.session_state:
-    new_game(data)
+    start_new_game(data)
 
 if st.session_state.finished:
-    st.success(f"Voyage complete! You scored {st.session_state.score}/{TOTAL_ROUNDS}.")
+    st.success(
+        f"Voyage complete! You scored "
+        f"{st.session_state.score}/{len(st.session_state.passengers)}."
+    )
 
-    if st.session_state.score == TOTAL_ROUNDS:
+    if st.session_state.score == len(st.session_state.passengers):
         st.balloons()
         st.write("🏆 Perfect score, Captain!")
     elif st.session_state.score >= 3:
@@ -103,11 +104,11 @@ if st.session_state.finished:
         st.write("🧭 Tough voyage. Try again!")
 
     if st.button("Play again", type="primary"):
-        new_game(data)
+        start_new_game(data)
         st.rerun()
 
 else:
-    round_number = st.session_state.round
+    round_number = st.session_state.round_number
     passenger = st.session_state.passengers.iloc[round_number]
 
     age = float(passenger["Age"])
@@ -116,18 +117,20 @@ else:
 
     survival_chance = model.predict_proba(features)[0][1]
     predicted_survival = survival_chance >= 0.5
+    total_passengers = len(st.session_state.passengers)
 
-    st.progress(round_number / TOTAL_ROUNDS)
-    st.subheader(f"Passenger {round_number + 1} of {TOTAL_ROUNDS}")
+    st.progress(round_number / total_passengers)
+    st.subheader(f"Passenger {round_number + 1} of {total_passengers}")
 
-    col1, col2 = st.columns(2)
-    col1.metric("Age", f"{age:.0f} years")
-    col2.metric("Ticket fare", f"£{fare:.2f}")
+    age_column, fare_column = st.columns(2)
+    age_column.metric("Age", f"{age:.0f} years")
+    fare_column.metric("Ticket fare", f"£{fare:.2f}")
 
     st.metric("Model's estimated survival chance", f"{survival_chance:.1%}")
     st.progress(float(survival_chance))
     st.caption(
-        f"Model prediction: {'survived' if predicted_survival else 'did not survive'}"
+        "Model prediction: "
+        f"{'survived' if predicted_survival else 'did not survive'}"
     )
 
     st.write("What do you think happened?")
@@ -141,9 +144,8 @@ else:
     if st.button("Submit guess", type="primary"):
         guess_survived = choice == "Survived"
         actual_survived = int(passenger[TARGET_COLUMN])
-        correct = int(guess_survived) == actual_survived
 
-        if correct:
+        if int(guess_survived) == actual_survived:
             st.session_state.score += 1
             st.session_state.feedback = ("correct", actual_survived)
         else:
@@ -158,14 +160,16 @@ else:
             st.error("❌ Not quite!")
 
         outcome = "survived" if actual_survived else "did not survive"
-        st.write(f"The real passenger **{outcome**}.")
-        st.write(f"Current score: {st.session_state.score}/{TOTAL_ROUNDS}")
+        st.write(f"The real passenger **{outcome}**.")
+        st.write(
+            f"Current score: {st.session_state.score}/{total_passengers}"
+        )
 
         if st.button("Next passenger", type="primary"):
-            st.session_state.round += 1
+            st.session_state.round_number += 1
             st.session_state.feedback = None
 
-            if st.session_state.round >= len(st.session_state.passengers):
+            if st.session_state.round_number >= total_passengers:
                 st.session_state.finished = True
 
             st.rerun()
