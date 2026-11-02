@@ -1,149 +1,103 @@
-# ==== הגדרות - שנו כאן כדי לעבוד עם דאטה אחר ====
+# Lifeboat Challenge
+# Install dependencies first:
+# pip install kagglehub pandas numpy scikit-learn
 
-KAGGLE_DATASET = "harlfoxem/housesalesprediction"
-FEATURE_COLUMN = "sqft_living"
-TARGET_COLUMN = "price"
+KAGGLE_DATASET = "yasserh/titanic-dataset"
+FEATURE_COLUMNS = ["Age", "Fare"]
+TARGET_COLUMN = "Survived"
 
-import kagglehub
-import pandas as pd
 import os
 import numpy as np
-import streamlit as st
+import pandas as pd
+import kagglehub
+from sklearn.linear_model import LogisticRegression
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
 
-# =========================
-# הגדרות האתר
-# =========================
 
-st.set_page_config(
-    page_title="Titanic Survival Predictor",
-    page_icon="🚢",
-    layout="centered"
-)
-
-st.title("🚢 Titanic Survival Predictor")
-st.write("הזינו גיל וקבלו הערכה של סיכויי ההישרדות.")
-
-# =========================
-# הורדת הדאטה
-# =========================
-
-@st.cache_data
 def load_data():
-
-    # Download latest version
-    path = kagglehub.dataset_download("yasserh/titanic-dataset")
-
+    """Download and load the Titanic dataset from Kaggle."""
+    path = kagglehub.dataset_download(KAGGLE_DATASET)
     csv_path = os.path.join(path, "Titanic-Dataset.csv")
-    data = pd.read_csv(csv_path)
-
-    return data
+    return pd.read_csv(csv_path)
 
 
-data = load_data()
+def train_model(data):
+    """Train a survival classifier using passenger age and fare."""
+    clean_data = data.dropna(subset=FEATURE_COLUMNS + [TARGET_COLUMN])
 
-# =========================
-# ניקוי הנתונים
-# =========================
+    X = clean_data[FEATURE_COLUMNS].to_numpy()
+    y = clean_data[TARGET_COLUMN].to_numpy()
 
-data_clean = data.dropna(subset=['Age', 'Survived'])
-
-X = data_clean['Age'].to_numpy()
-y = data_clean['Survived'].to_numpy()
-
-# =========================
-# Baseline
-# =========================
-
-baseline_prediction = np.mean(y)
-baseline_loss = np.mean(np.abs(y - baseline_prediction))
-
-# =========================
-# Linear Regression
-# =========================
-
-from sklearn.linear_model import LinearRegression
-
-X_reshaped = X.reshape(-1, 1)
-
-model = LinearRegression()
-model.fit(X_reshaped, y)
-
-w = model.coef_[0]
-b = model.intercept_
-
-# =========================
-# Model Loss
-# =========================
-
-y_hat = model.predict(X_reshaped)
-
-model_loss = np.mean(np.abs(y - y_hat))
-
-# =========================
-# אתר - הכנסת גיל
-# =========================
-
-st.subheader("🔢 הזנת גיל")
-
-user_age = st.number_input(
-    "הזינו גיל של אדם:",
-    min_value=0.0,
-    max_value=100.0,
-    value=25.0,
-    step=1.0
-)
-
-# =========================
-# חיזוי
-# =========================
-
-if st.button("🔮 חשב סיכויי הישרדות"):
-
-    predicted_survival = model.predict(
-        np.array([[user_age]])
-    )[0]
-
-    # הפיכה לאחוזים
-    survival_percentage = predicted_survival * 100
-
-    # כדי שהתוצאה לא תחרוג מ-0% עד 100%
-    survival_percentage = np.clip(
-        survival_percentage,
-        0,
-        100
+    model = make_pipeline(
+        StandardScaler(),
+        LogisticRegression(max_iter=1000, random_state=42),
     )
+    model.fit(X, y)
 
-    st.subheader("📊 תוצאה")
+    return model, clean_data
 
-    st.metric(
-        label="סיכויי הישרדות משוערים",
-        value=f"{survival_percentage:.2f}%"
-    )
 
-    # Progress bar
-    st.progress(
-        int(survival_percentage)
-    )
+def get_guess():
+    """Ask the player to guess whether a passenger survived."""
+    while True:
+        guess = input("Your guess — survived? (y/n): ").strip().lower()
+        if guess in ("y", "yes"):
+            return 1
+        if guess in ("n", "no"):
+            return 0
+        print("Please enter y or n.")
 
-    if survival_percentage >= 50:
-        st.success("🟢 לפי המודל, ההסתברות המשוערת היא מעל 50%.")
+
+def play_game(model, data, rounds=3):
+    print("\n🚢 LIFEBOAT CHALLENGE 🚢")
+    print("Three passengers need your help.")
+    print("Use their age and ticket fare to guess who survived.\n")
+
+    # Sample a few real passengers, without revealing their outcome.
+    passengers = data.sample(n=rounds, random_state=None)
+    score = 0
+
+    for round_number, (_, passenger) in enumerate(passengers.iterrows(), start=1):
+        age = float(passenger["Age"])
+        fare = float(passenger["Fare"])
+
+        print(f"Passenger {round_number} of {rounds}")
+        print(f"Age: {age:.0f} | Fare: £{fare:.2f}")
+
+        guess = get_guess()
+        actual = int(passenger[TARGET_COLUMN])
+        prediction = int(model.predict(np.array([[age, fare]]))[0])
+
+        if guess == actual:
+            score += 1
+            print("✅ Correct!")
+        else:
+            print("❌ Not this time.")
+
+        print(f"Actual outcome: {'Survived' if actual else 'Did not survive'}")
+        print(
+            f"Model's guess: {'Survived' if prediction else 'Did not survive'}\n"
+        )
+
+    print(f"Game over! You scored {score}/{rounds}.")
+
+    if score == rounds:
+        print("🏆 Incredible — you saved everyone!")
+    elif score >= 2:
+        print("🌟 Nice work, lifeboat captain!")
     else:
-        st.error("🔴 לפי המודל, ההסתברות המשוערת היא מתחת ל-50%.")
+        print("🧭 Tough voyage! Try again for a higher score.")
 
 
-# =========================
-# מידע על המודל
-# =========================
+def main():
+    print("Loading the Titanic data and preparing the game...")
+    data = load_data()
+    model, clean_data = train_model(data)
 
-with st.expander("📈 מידע על המודל"):
+    print(f"Ready! The game has {len(clean_data)} usable passenger records.")
+    play_game(model, clean_data)
 
-    st.write("**משתנה קלט:** Age")
-    st.write("**משתנה מטרה:** Survived")
 
-    st.write(f"**w:** {w:.6f}")
-    st.write(f"**b:** {b:.6f}")
-
-    st.write(f"**Baseline loss:** {baseline_loss:.6f}")
-    st.write(f"**Model loss:** {model_loss:.6f}")
-
-    st.write(f"**מספר דוגמאות:** {len(X)}")
+if __name__ == "__main__":
+    main()
