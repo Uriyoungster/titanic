@@ -32,7 +32,7 @@ FALLBACK_PASSENGERS = [
 
 @st.cache_data
 def load_titanic_data():
-    """Download Titanic data; use sample data if Kaggle is unavailable."""
+    """Download Titanic data, or use sample data if Kaggle is unavailable."""
     try:
         path = kagglehub.dataset_download(KAGGLE_DATASET)
         csv_path = os.path.join(path, "Titanic-Dataset.csv")
@@ -43,14 +43,13 @@ def load_titanic_data():
             raise ValueError("The downloaded dataset contains no usable rows.")
 
         return data, "Kaggle Titanic dataset"
-    except Exception as error:
-        st.warning(f"Could not download the Kaggle dataset: {error}")
+    except Exception:
         return pd.DataFrame(FALLBACK_PASSENGERS), "built-in sample data"
 
 
 @st.cache_resource
 def train_model(data):
-    """Train a model that estimates survival chance from age and fare."""
+    """Estimate survival probability using passenger age and fare."""
     X = data[FEATURE_COLUMNS].to_numpy()
     y = data[TARGET_COLUMN].to_numpy()
 
@@ -79,23 +78,23 @@ st.set_page_config(
 )
 
 st.title("🚢 Titanic: Lifeboat Challenge")
-st.write("Check the model's survival chance, then make your own guess.")
+st.write("Guess whether each passenger survived. The model's chance appears after your guess.")
 
 data, data_source = load_titanic_data()
 model = train_model(data)
-
-st.caption(f"Probability model trained with: {data_source}")
+st.caption(f"Model data: {data_source}")
 
 if "passengers" not in st.session_state:
     start_new_game(data)
 
 if st.session_state.finished:
+    total_passengers = len(st.session_state.passengers)
     st.success(
         f"Voyage complete! You scored "
-        f"{st.session_state.score}/{len(st.session_state.passengers)}."
+        f"{st.session_state.score}/{total_passengers}."
     )
 
-    if st.session_state.score == len(st.session_state.passengers):
+    if st.session_state.score == total_passengers:
         st.balloons()
         st.write("🏆 Perfect score, Captain!")
     elif st.session_state.score >= 3:
@@ -110,14 +109,10 @@ if st.session_state.finished:
 else:
     round_number = st.session_state.round_number
     passenger = st.session_state.passengers.iloc[round_number]
+    total_passengers = len(st.session_state.passengers)
 
     age = float(passenger["Age"])
     fare = float(passenger["Fare"])
-    features = np.array([[age, fare]])
-
-    survival_chance = model.predict_proba(features)[0][1]
-    predicted_survival = survival_chance >= 0.5
-    total_passengers = len(st.session_state.passengers)
 
     st.progress(round_number / total_passengers)
     st.subheader(f"Passenger {round_number + 1} of {total_passengers}")
@@ -126,44 +121,58 @@ else:
     age_column.metric("Age", f"{age:.0f} years")
     fare_column.metric("Ticket fare", f"£{fare:.2f}")
 
-    st.metric("Model's estimated survival chance", f"{survival_chance:.1%}")
-    st.progress(float(survival_chance))
-    st.caption(
-        "Model prediction: "
-        f"{'survived' if predicted_survival else 'did not survive'}"
-    )
+    if st.session_state.feedback is None:
+        st.write("What do you think happened?")
 
-    st.write("What do you think happened?")
-    choice = st.radio(
-        "Your guess:",
-        ["Survived", "Did not survive"],
-        key=f"answer_{round_number}",
-        horizontal=True,
-    )
+        choice = st.radio(
+            "Your guess:",
+            ["Survived", "Did not survive"],
+            key=f"answer_{round_number}",
+            horizontal=True,
+        )
 
-    if st.button("Submit guess", type="primary"):
-        guess_survived = choice == "Survived"
-        actual_survived = int(passenger[TARGET_COLUMN])
+        if st.button("Submit guess", type="primary"):
+            guess_survived = choice == "Survived"
+            actual_survived = int(passenger[TARGET_COLUMN])
 
-        if int(guess_survived) == actual_survived:
-            st.session_state.score += 1
-            st.session_state.feedback = ("correct", actual_survived)
-        else:
-            st.session_state.feedback = ("incorrect", actual_survived)
+            features = np.array([[age, fare]])
+            survival_chance = float(model.predict_proba(features)[0][1])
 
-    if st.session_state.feedback is not None:
-        result, actual_survived = st.session_state.feedback
+            correct = int(guess_survived) == actual_survived
+            st.session_state.feedback = {
+                "correct": correct,
+                "actual_survived": actual_survived,
+                "survival_chance": survival_chance,
+            }
+            if correct:
+                st.session_state.score += 1
+            st.rerun()
 
-        if result == "correct":
+    else:
+        feedback = st.session_state.feedback
+
+        if feedback["correct"]:
             st.success("✅ Correct guess!")
         else:
             st.error("❌ Not quite!")
 
-        outcome = "survived" if actual_survived else "did not survive"
+        outcome = "survived" if feedback["actual_survived"] else "did not survive"
         st.write(f"The real passenger **{outcome}**.")
-        st.write(
-            f"Current score: {st.session_state.score}/{total_passengers}"
+
+        # The model's survival chance is revealed only after the guess.
+        st.metric(
+            "Model's estimated survival chance",
+            f"{feedback['survival_chance']:.1%}",
         )
+        st.progress(feedback["survival_chance"])
+
+        prediction = (
+            "survived"
+            if feedback["survival_chance"] >= 0.5
+            else "did not survive"
+        )
+        st.caption(f"After seeing the chance, the model predicted: {prediction}")
+        st.write(f"Current score: {st.session_state.score}/{total_passengers}")
 
         if st.button("Next passenger", type="primary"):
             st.session_state.round_number += 1
