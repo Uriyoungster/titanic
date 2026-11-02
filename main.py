@@ -1,5 +1,8 @@
 import random
 
+import streamlit as st
+
+
 PASSENGERS = [
     {"name": "Ada", "age": 8, "fare": 30, "survived": True},
     {"name": "Arthur", "age": 42, "fare": 8, "survived": False},
@@ -15,75 +18,86 @@ PASSENGERS = [
     {"name": "Leonard", "age": 23, "fare": 9, "survived": False},
 ]
 
-
-def survival_guess(age, fare):
-    """A simple guess based on age and fare, inspired by the original features."""
-    score = 0
-
-    if age < 15:
-        score += 2
-    elif age < 30:
-        score += 1
-
-    if fare >= 50:
-        score += 2
-    elif fare >= 25:
-        score += 1
-
-    return score >= 2
+TOTAL_ROUNDS = 5
 
 
-def ask_yes_no(prompt):
-    while True:
-        answer = input(prompt).strip().lower()
-        if answer in ("y", "yes"):
-            return True
-        if answer in ("n", "no"):
-            return False
-        print("Please type y or n.")
+def start_game():
+    st.session_state.passengers = random.sample(PASSENGERS, TOTAL_ROUNDS)
+    st.session_state.round = 0
+    st.session_state.score = 0
+    st.session_state.finished = False
+    st.session_state.feedback = None
 
 
-def play():
-    print("=" * 42)
-    print("       🚢 TITANIC: THE LIFEBOAT GAME")
-    print("=" * 42)
-    print("A storm is coming! Guess who made it to safety.")
-    print("You'll meet 5 passengers. Type y or n for each.\n")
+st.set_page_config(
+    page_title="Titanic Lifeboat Challenge",
+    page_icon="🚢",
+    layout="centered",
+)
 
-    chosen = random.sample(PASSENGERS, 5)
-    points = 0
+st.title("🚢 Titanic: Lifeboat Challenge")
+st.write("Can you guess which passengers made it to safety?")
 
-    for number, passenger in enumerate(chosen, start=1):
-        print(f"Passenger {number}/5: {passenger['name']}")
-        print(f"Age: {passenger['age']} | Ticket fare: £{passenger['fare']}")
+if "passengers" not in st.session_state:
+    start_game()
 
-        guess = ask_yes_no("Do you think they survived? (y/n): ")
-        model_guess = survival_guess(passenger["age"], passenger["fare"])
-        actual = passenger["survived"]
-
-        if guess == actual:
-            points += 1
-            print("✅ Your guess was right!")
-        else:
-            print("❌ Your guess was wrong.")
-
-        print("They survived!" if actual else "They did not survive.")
-        print(
-            "The model guessed correctly.\n"
-            if model_guess == actual
-            else "The model guessed incorrectly.\n"
-        )
-
-    print("=" * 42)
-    print(f"Game over! Your score: {points}/5")
-
-    if points == 5:
-        print("🏆 Incredible! You saved every passenger.")
-    elif points >= 3:
-        print("🌟 Nice work, captain!")
+if st.session_state.finished:
+    st.success(f"Voyage complete! You scored {st.session_state.score}/{TOTAL_ROUNDS}.")
+    if st.session_state.score == TOTAL_ROUNDS:
+        st.balloons()
+        st.write("🏆 Perfect score, Captain!")
+    elif st.session_state.score >= 3:
+        st.write("🌟 Well done, Captain!")
     else:
-        print("🧭 Rough voyage. Give it another try!")
+        st.write("🧭 Tough voyage. Try again!")
 
+    if st.button("Play again", type="primary"):
+        start_game()
+        st.rerun()
 
-if __name__ == "__main__":
-    play()
+else:
+    number = st.session_state.round
+    passenger = st.session_state.passengers[number]
+
+    st.progress(number / TOTAL_ROUNDS)
+    st.subheader(f"Passenger {number + 1} of {TOTAL_ROUNDS}")
+    st.metric("Age", f"{passenger['age']} years")
+    st.metric("Ticket fare", f"£{passenger['fare']}")
+
+    st.write("Do you think this passenger survived?")
+
+    choice = st.radio(
+        "Choose your answer:",
+        ["Survived", "Did not survive"],
+        key=f"answer_{number}",
+        horizontal=True,
+    )
+
+    if st.button("Submit guess", type="primary"):
+        guess_survived = choice == "Survived"
+        actual_survived = passenger["survived"]
+        correct = guess_survived == actual_survived
+
+        if correct:
+            st.session_state.score += 1
+            st.session_state.feedback = ("correct", actual_survived)
+        else:
+            st.session_state.feedback = ("incorrect", actual_survived)
+
+    if st.session_state.feedback is not None:
+        result, survived = st.session_state.feedback
+
+        if result == "correct":
+            st.success("✅ Correct guess!")
+        else:
+            st.error("❌ Not quite!")
+
+        outcome = "survived" if survived else "did not survive"
+        st.write(f"This passenger **{outcome}**.")
+
+        if st.button("Next passenger", type="primary"):
+            st.session_state.round += 1
+            st.session_state.feedback = None
+            if st.session_state.round >= TOTAL_ROUNDS:
+                st.session_state.finished = True
+            st.rerun()
