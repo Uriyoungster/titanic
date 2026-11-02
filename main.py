@@ -1,103 +1,89 @@
-# Lifeboat Challenge
-# Install dependencies first:
-# pip install kagglehub pandas numpy scikit-learn
+import random
 
-KAGGLE_DATASET = "yasserh/titanic-dataset"
-FEATURE_COLUMNS = ["Age", "Fare"]
-TARGET_COLUMN = "Survived"
-
-import os
-import numpy as np
-import pandas as pd
-import kagglehub
-from sklearn.linear_model import LogisticRegression
-from sklearn.pipeline import make_pipeline
-from sklearn.preprocessing import StandardScaler
-
-
-def load_data():
-    """Download and load the Titanic dataset from Kaggle."""
-    path = kagglehub.dataset_download(KAGGLE_DATASET)
-    csv_path = os.path.join(path, "Titanic-Dataset.csv")
-    return pd.read_csv(csv_path)
+PASSENGERS = [
+    {"name": "Ada", "age": 8, "fare": 30, "survived": True},
+    {"name": "Arthur", "age": 42, "fare": 8, "survived": False},
+    {"name": "Beatrice", "age": 25, "fare": 80, "survived": True},
+    {"name": "Charles", "age": 55, "fare": 12, "survived": False},
+    {"name": "Diana", "age": 19, "fare": 25, "survived": True},
+    {"name": "Edward", "age": 36, "fare": 7, "survived": False},
+    {"name": "Florence", "age": 31, "fare": 100, "survived": True},
+    {"name": "George", "age": 67, "fare": 10, "survived": False},
+    {"name": "Hazel", "age": 14, "fare": 50, "survived": True},
+    {"name": "Isaac", "age": 29, "fare": 15, "survived": False},
+    {"name": "Julia", "age": 40, "fare": 65, "survived": True},
+    {"name": "Leonard", "age": 23, "fare": 9, "survived": False},
+]
 
 
-def train_model(data):
-    """Train a survival classifier using passenger age and fare."""
-    clean_data = data.dropna(subset=FEATURE_COLUMNS + [TARGET_COLUMN])
-
-    X = clean_data[FEATURE_COLUMNS].to_numpy()
-    y = clean_data[TARGET_COLUMN].to_numpy()
-
-    model = make_pipeline(
-        StandardScaler(),
-        LogisticRegression(max_iter=1000, random_state=42),
-    )
-    model.fit(X, y)
-
-    return model, clean_data
-
-
-def get_guess():
-    """Ask the player to guess whether a passenger survived."""
-    while True:
-        guess = input("Your guess — survived? (y/n): ").strip().lower()
-        if guess in ("y", "yes"):
-            return 1
-        if guess in ("n", "no"):
-            return 0
-        print("Please enter y or n.")
-
-
-def play_game(model, data, rounds=3):
-    print("\n🚢 LIFEBOAT CHALLENGE 🚢")
-    print("Three passengers need your help.")
-    print("Use their age and ticket fare to guess who survived.\n")
-
-    # Sample a few real passengers, without revealing their outcome.
-    passengers = data.sample(n=rounds, random_state=None)
+def survival_guess(age, fare):
+    """A simple guess based on age and fare, inspired by the original features."""
     score = 0
 
-    for round_number, (_, passenger) in enumerate(passengers.iterrows(), start=1):
-        age = float(passenger["Age"])
-        fare = float(passenger["Fare"])
+    if age < 15:
+        score += 2
+    elif age < 30:
+        score += 1
 
-        print(f"Passenger {round_number} of {rounds}")
-        print(f"Age: {age:.0f} | Fare: £{fare:.2f}")
+    if fare >= 50:
+        score += 2
+    elif fare >= 25:
+        score += 1
 
-        guess = get_guess()
-        actual = int(passenger[TARGET_COLUMN])
-        prediction = int(model.predict(np.array([[age, fare]]))[0])
+    return score >= 2
+
+
+def ask_yes_no(prompt):
+    while True:
+        answer = input(prompt).strip().lower()
+        if answer in ("y", "yes"):
+            return True
+        if answer in ("n", "no"):
+            return False
+        print("Please type y or n.")
+
+
+def play():
+    print("=" * 42)
+    print("       🚢 TITANIC: THE LIFEBOAT GAME")
+    print("=" * 42)
+    print("A storm is coming! Guess who made it to safety.")
+    print("You'll meet 5 passengers. Type y or n for each.\n")
+
+    chosen = random.sample(PASSENGERS, 5)
+    points = 0
+
+    for number, passenger in enumerate(chosen, start=1):
+        print(f"Passenger {number}/5: {passenger['name']}")
+        print(f"Age: {passenger['age']} | Ticket fare: £{passenger['fare']}")
+
+        guess = ask_yes_no("Do you think they survived? (y/n): ")
+        model_guess = survival_guess(passenger["age"], passenger["fare"])
+        actual = passenger["survived"]
 
         if guess == actual:
-            score += 1
-            print("✅ Correct!")
+            points += 1
+            print("✅ Your guess was right!")
         else:
-            print("❌ Not this time.")
+            print("❌ Your guess was wrong.")
 
-        print(f"Actual outcome: {'Survived' if actual else 'Did not survive'}")
+        print("They survived!" if actual else "They did not survive.")
         print(
-            f"Model's guess: {'Survived' if prediction else 'Did not survive'}\n"
+            "The model guessed correctly.\n"
+            if model_guess == actual
+            else "The model guessed incorrectly.\n"
         )
 
-    print(f"Game over! You scored {score}/{rounds}.")
+    print("=" * 42)
+    print(f"Game over! Your score: {points}/5")
 
-    if score == rounds:
-        print("🏆 Incredible — you saved everyone!")
-    elif score >= 2:
-        print("🌟 Nice work, lifeboat captain!")
+    if points == 5:
+        print("🏆 Incredible! You saved every passenger.")
+    elif points >= 3:
+        print("🌟 Nice work, captain!")
     else:
-        print("🧭 Tough voyage! Try again for a higher score.")
-
-
-def main():
-    print("Loading the Titanic data and preparing the game...")
-    data = load_data()
-    model, clean_data = train_model(data)
-
-    print(f"Ready! The game has {len(clean_data)} usable passenger records.")
-    play_game(model, clean_data)
+        print("🧭 Rough voyage. Give it another try!")
 
 
 if __name__ == "__main__":
-    main()
+    play()
